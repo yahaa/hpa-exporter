@@ -107,7 +107,6 @@ func initCollectors() []prometheus.Collector {
 	}
 }
 
-
 func getHpaListV1() ([]asv1.HorizontalPodAutoscaler, error) {
 	var err error
 	if kubeClient == nil {
@@ -156,6 +155,7 @@ func collectorV1(hpa []asv1.HorizontalPodAutoscaler, additionalLabel string) {
 				hpaScalingLimited.With(baseLabel).Set(float64(1))
 				hpaAbleToScale.With(baseLabel).Set(float64(0))
 			} else {
+				hpaScalingLimited.With(baseLabel).Set(float64(0))
 				hpaAbleToScale.With(baseLabel).Set(float64(1))
 			}
 		}
