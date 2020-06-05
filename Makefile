@@ -1,12 +1,11 @@
-
-REGISTRIES?=registry.qtt6.cn
-REPOSITORY?=paas-dev
-APP=storesd
+REGISTRIES?=docker.io
+REPOSITORY?=yzihua
+APP=hpa-exporter
 V=$(shell cat VERSION)
 
 
 build:
-	GOOS=linux GOARCH=amd64 go build -o deploy/bin/storesd main.go config.go
+	GOOS=linux GOARCH=amd64 go build -o deploy/bin/hpa-exporter main.go
 
 
 image: build

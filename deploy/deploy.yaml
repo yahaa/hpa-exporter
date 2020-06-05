@@ -1,0 +1,121 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: hpa-exporter
+  name: hpa-exporter
+  namespace: monitoring
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: hpa-exporter
+  template:
+    metadata:
+      labels:
+        app: hpa-exporter
+    spec:
+      containers:
+      - args:
+        - --additional-label=opsservice
+        image: docker.io/yzihua/hpa-exporter:v1.0.0
+        imagePullPolicy: Always
+        name: hpa-exporter
+        ports:
+        - containerPort: 9099
+          name: http
+          protocol: TCP
+        resources:
+          limits:
+            cpu: "1"
+            memory: 2Gi
+          requests:
+            cpu: 100m
+            memory: 100Mi
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      serviceAccountName: hpa-exporter
+      
+---
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/name: hpa-exporter
+  name: hpa-exporter
+rules:
+  - apiGroups:
+      - autoscaling
+    resources:
+      - horizontalpodautoscalers
+    verbs:
+      - 'list'
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  labels:
+    app.kubernetes.io/name: hpa-exporter
+  name: hpa-exporter
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: hpa-exporter
+subjects:
+  - kind: ServiceAccount
+    name: hpa-exporter
+    namespace: monitoring
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  labels:
+    app.kubernetes.io/component: controller
+    app.kubernetes.io/name: hpa-exporter
+  name: hpa-exporter
+  namespace: monitoring
+
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  labels:
+    system-app: "true"
+  name: hpa-exporter-metrics-exposer
+  namespace: monitoring
+spec:
+  endpoints:
+    - bearerTokenSecret:
+        key: ""
+      path: /metrics
+      port: app-metrics
+  namespaceSelector:
+    matchNames:
+      - monitoring
+  selector:
+    matchLabels:
+      app-metrics: hpa-exporter
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app-metrics: hpa-exporter
+  name: hpa-exporter-metrics-exposer
+  namespace: monitoring
+spec:
+  ports:
+    - name: app-metrics
+      port: 9099
+      protocol: TCP
+      targetPort: 9099
+  selector:
+    app: hpa-exporter
+  sessionAffinity: None
+  type: ClusterIP
+
+
