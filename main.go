@@ -17,11 +17,16 @@ import (
 )
 
 var (
-	hpaLastScaleSecond     *prometheus.GaugeVec
-	hpaCurrentMetricsValue *prometheus.GaugeVec
-	hpaTargetMetricsValue  *prometheus.GaugeVec
-	hpaAbleToScale         *prometheus.GaugeVec
-	hpaScalingLimited      *prometheus.GaugeVec
+	hpaStatusLastScaleSecond     *prometheus.GaugeVec
+	hpaStatusCurrentMetricsValue *prometheus.GaugeVec
+	hpaStatusCurrentReplicas     *prometheus.GaugeVec
+	hpaStatusDesiredReplicas     *prometheus.GaugeVec
+	hpaStatusAbleToScale         *prometheus.GaugeVec
+	hpaStatusScalingLimited      *prometheus.GaugeVec
+
+	hpaSpecMinReplicas        *prometheus.GaugeVec
+	hpaSpecMaxReplicas        *prometheus.GaugeVec
+	hpaSpecTargetMetricsValue *prometheus.GaugeVec
 
 	kubeClient *kubernetes.Clientset
 
@@ -58,53 +63,89 @@ func initCollectors() []prometheus.Collector {
 		baseLabels = append(baseLabels, config.AdditionalLabel)
 	}
 
-	hpaLastScaleSecond = prometheus.NewGaugeVec(
+	hpaSpecMinReplicas = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
-			Name: "hpa_last_scale_second",
-			Help: "Time the scale was last executed.",
+			Name: "hpa_spec_min_replicas",
+			Help: "hpa spec min replicas.",
 		},
 		baseLabels,
 	)
 
-	hpaCurrentMetricsValue = prometheus.NewGaugeVec(
+	hpaSpecMaxReplicas = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
-			Name: "hpa_current_metrics_value",
-			Help: "Current Metrics Value.",
+			Name: "hpa_spec_max_replicas",
+			Help: "hpa spec max replicas.",
 		},
 		baseLabels,
 	)
 
-	hpaTargetMetricsValue = prometheus.NewGaugeVec(
+	hpaSpecTargetMetricsValue = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
-			Name: "hpa_target_metrics_value",
+			Name: "hpa_spce_target_metrics_value",
 			Help: "Target Metrics Value.",
 		},
 		baseLabels,
 	)
 
-	hpaAbleToScale = prometheus.NewGaugeVec(
+	hpaStatusCurrentReplicas = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
-			Name: "hpa_able_to_scale",
+			Name: "hpa_status_current_replicas",
+			Help: "hpa current replicas.",
+		},
+		baseLabels,
+	)
+
+	hpaStatusLastScaleSecond = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "hpa_status_last_scale_second",
+			Help: "Time the scale was last executed.",
+		},
+		baseLabels,
+	)
+
+	hpaStatusCurrentMetricsValue = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "hpa_status_current_metrics_value",
+			Help: "Current Metrics Value.",
+		},
+		baseLabels,
+	)
+
+	hpaStatusAbleToScale = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "hpa_status_able_to_scale",
 			Help: "status able to scale from annotation.",
 		},
 		baseLabels,
 	)
 
-	hpaScalingLimited = prometheus.NewGaugeVec(
+	hpaStatusScalingLimited = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
-			Name: "hpa_scaling_limited",
+			Name: "hpa_status_scaling_limited",
 			Help: "status scaling limited from annotation.",
+		},
+		baseLabels,
+	)
+	hpaStatusDesiredReplicas = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "hpa_status_desired_replicas",
+			Help: "hpa status desired replicas.",
 		},
 		baseLabels,
 	)
 
 	return []prometheus.Collector{
-		hpaLastScaleSecond,
-		hpaCurrentMetricsValue,
-		hpaTargetMetricsValue,
-		hpaAbleToScale,
-		hpaScalingLimited,
+		hpaSpecMaxReplicas,
+		hpaSpecMinReplicas,
+		hpaSpecTargetMetricsValue,
+		hpaStatusLastScaleSecond,
+		hpaStatusCurrentReplicas,
+		hpaStatusCurrentMetricsValue,
+		hpaStatusAbleToScale,
+		hpaStatusDesiredReplicas,
+		hpaStatusScalingLimited,
 	}
+
 }
 
 func getHpaListV1() ([]asv1.HorizontalPodAutoscaler, error) {
@@ -139,26 +180,35 @@ func collectorV1(hpa []asv1.HorizontalPodAutoscaler, additionalLabel string) {
 		}
 
 		if a.Status.LastScaleTime != nil {
-			hpaLastScaleSecond.With(baseLabel).Set(float64(a.Status.LastScaleTime.Unix()))
+			hpaStatusLastScaleSecond.With(baseLabel).Set(float64(a.Status.LastScaleTime.Unix()))
 		}
 
 		if a.Spec.TargetCPUUtilizationPercentage != nil {
-			hpaTargetMetricsValue.With(baseLabel).Set(float64(*a.Spec.TargetCPUUtilizationPercentage))
+			hpaSpecTargetMetricsValue.With(baseLabel).Set(float64(*a.Spec.TargetCPUUtilizationPercentage))
+		}
+
+		hpaSpecMaxReplicas.With(baseLabel).Set(float64(a.Spec.MaxReplicas))
+
+		if a.Spec.MinReplicas != nil {
+			hpaSpecMinReplicas.With(baseLabel).Set(float64(*a.Spec.MinReplicas))
 		}
 
 		if a.Status.CurrentCPUUtilizationPercentage != nil {
-			hpaCurrentMetricsValue.With(baseLabel).Set(float64(*a.Status.CurrentCPUUtilizationPercentage))
+			hpaStatusCurrentMetricsValue.With(baseLabel).Set(float64(*a.Status.CurrentCPUUtilizationPercentage))
 		}
 
 		if a.Status.CurrentCPUUtilizationPercentage != nil && a.Spec.TargetCPUUtilizationPercentage != nil {
 			if *a.Status.CurrentCPUUtilizationPercentage >= *a.Spec.TargetCPUUtilizationPercentage && a.Status.DesiredReplicas >= a.Spec.MaxReplicas {
-				hpaScalingLimited.With(baseLabel).Set(float64(1))
-				hpaAbleToScale.With(baseLabel).Set(float64(0))
+				hpaStatusScalingLimited.With(baseLabel).Set(float64(1))
+				hpaStatusAbleToScale.With(baseLabel).Set(float64(0))
 			} else {
-				hpaScalingLimited.With(baseLabel).Set(float64(0))
-				hpaAbleToScale.With(baseLabel).Set(float64(1))
+				hpaStatusScalingLimited.With(baseLabel).Set(float64(0))
+				hpaStatusAbleToScale.With(baseLabel).Set(float64(1))
 			}
 		}
+
+		hpaStatusCurrentReplicas.With(baseLabel).Set(float64(a.Status.CurrentReplicas))
+		hpaStatusDesiredReplicas.With(baseLabel).Set(float64(a.Status.DesiredReplicas))
 	}
 }
 
